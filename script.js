@@ -576,7 +576,47 @@ class StorageManager {
 // ============================================================================
 
 class AudioPlayer {
-    static play(playerId, buttonElement) {
+    static async play(playerId, buttonElement) {
+    // Stop innings playlist if playing
+    if (spotifyManager.isInningsPlaying) {
+        spotifyManager.stopInningsPlaylist();
+    }
+    
+    // Get player data
+    const player = await Database.getPlayer(playerId);
+    if (!player) return;
+    
+    // Check audio source
+    if (player.audioSource === 'spotify' && player.spotifyTrack) {
+        // Play Spotify track
+        if (AppState.audio.currentBtn === buttonElement) {
+            await spotifyManager.pause();
+            UIManager.clearElementState(buttonElement);
+            buttonElement.removeAttribute('data-active');
+            AppState.audio.currentBtn = null;
+            document.body.classList.remove('audio-active');
+            return;
+        }
+        
+        if (AppState.audio.currentBtn) return;
+        
+        const success = await spotifyManager.play(player.spotifyTrack.uri);
+        if (success) {
+            document.body.classList.add('audio-active');
+            UIManager.setElementState(buttonElement, PLAYER_STATE.PLAYING);
+            buttonElement.setAttribute('data-active', 'true');
+            AppState.audio.currentBtn = buttonElement;
+            
+            // Update last played index
+            const lineupItems = Array.from(document.querySelectorAll('.lineup-item'));
+            const lineupIndex = lineupItems.indexOf(buttonElement);
+            if (lineupIndex !== -1) {
+                AppState.ui.lastPlayedIndex = lineupIndex;
+                Database.saveAppState(`lastPlayedIndex_${AppState.currentTeamId}`, lineupIndex).catch(console.error);
+            }
+        }
+    } else {
+        // Play local audio file
         const audioUrl = AppState.playerTracks.get(playerId);
         if (!audioUrl) {
             console.error(`No audio found for player ${playerId}`);
@@ -622,6 +662,7 @@ class AudioPlayer {
             this.stop();
         }
     }
+}
     
     static fadeOut() {
         if (!AppState.audio.current || AppState.audio.fadeInterval) return;
@@ -719,24 +760,50 @@ class UIManager {
     }
     
     static renderRosterItem(player, container) {
-        const card = document.createElement('div');
-        card.className = 'roster-item' + (player.isPitcher ? ' pitcher' : '');
-        card.innerHTML = `
-            <div class="roster-item-header">
-                <div class="player-info${player.isPitcher ? ' pitcher' : ''}" data-player-id="${player.id}">#${this.escapeHtml(player.number)} ${this.escapeHtml(player.name)}</div>
-                <div class="roster-actions">
-                    <button class="edit-btn" data-action="edit-player" data-player-id="${player.id}">✏️ Edit</button>
-                    ${!player.isPitcher ? `<button class="roster-btn" data-action="add-to-lineup" data-player-id="${player.id}">➕ Lineup</button>` : ''}
-                </div>
+    const card = document.createElement('div');
+    card.className = 'roster-item' + (player.isPitcher ? ' pitcher' : '');
+    
+    const audioSource = player.audioSource || 'local';
+    
+    card.innerHTML = `
+        <div class="roster-item-header">
+            <div class="player-info${player.isPitcher ? ' pitcher' : ''}" data-player-id="${player.id}">#${this.escapeHtml(player.number)} ${this.escapeHtml(player.name)}</div>
+            <div class="roster-actions">
+                <button class="edit-btn" data-action="edit-player" data-player-id="${player.id}">✏️ Edit</button>
+                ${!player.isPitcher ? `<button class="roster-btn" data-action="add-to-lineup" data-player-id="${player.id}">➕ Lineup</button>` : ''}
             </div>
-            <div class="upload-zone">
-                <input type="file" accept="audio/*" data-action="upload-audio" data-player-id="${player.id}">
-                <button class="delete-player-btn" data-action="delete-player" data-player-id="${player.id}">Delete</button>
+        </div>
+        <div class="upload-zone">
+            <div class="audio-source-selector">
+                <button class="source-btn ${audioSource === 'local' ? 'active' : ''}" 
+                        data-action="select-source-local" data-player-id="${player.id}">
+                    📁 Local File
+                </button>
+                <button class="source-btn spotify ${audioSource === 'spotify' ? 'active' : ''}" 
+                        data-action="select-source-spotify" data-player-id="${player.id}">
+                    🎵 Spotify
+                </button>
+            </div>
+            ${audioSource === 'local' ? `
+                <input type="file" accept="audio/*" data-action="upload-audio" data-player-id="${player.id}" style="margin-top:8px;">
                 <p class="status ${player.file ? 'loaded' : ''}">${this.escapeHtml(player.fileName || 'No audio uploaded')}</p>
-            </div>
-        `;
-        container.appendChild(card);
-    }
+            ` : `
+                <button data-action="spotify-search-player" data-player-id="${player.id}" 
+                        style="background:#1DB954; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; width:100%; margin-top:8px;">
+                    ${player.spotifyTrack ? '🎵 Change Track' : '🔍 Search Spotify'}
+                </button>
+                ${player.spotifyTrack ? `
+                    <p class="status loaded" style="margin-top:8px;">
+                        <span class="spotify-indicator"></span>
+                        ${this.escapeHtml(player.spotifyTrack.name)} - ${this.escapeHtml(player.spotifyTrack.artist)}
+                    </p>
+                ` : '<p class="status">No Spotify track selected</p>'}
+            `}
+            <button class="delete-player-btn" data-action="delete-player" data-player-id="${player.id}">Delete</button>
+        </div>
+    `;
+    container.appendChild(card);
+}
     
     static renderSubItem(player, container) {
         const btn = document.createElement('button');
