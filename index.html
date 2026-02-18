@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Baseball Soundboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    <script src="config.js"></script>
+</head>
+<body class="locked">
+
+    <header>
+        <div class="header-left">
+            <button id="subs-toggle" data-action="toggle-subs">📋 Quick Subs</button>
+            <button id="pitchers-toggle" data-action="toggle-pitchers">⚾ Pitchers</button>
+            <h1>⚾ Lineup</h1>
+        </div>
+
+        <div class="header-controls">
+            <div class="control-group team-selector">
+                <label for="team-select">Team:</label>
+                <select id="team-select"></select>
+                <button class="manage-teams-btn" data-action="manage-teams" title="Manage Teams">⚙️</button>
+            </div>
+            <div class="control-group">
+                <label for="volume">Vol:</label>
+                <input type="range" id="volume" min="0" max="1" step="0.05" value="0.8">
+            </div>
+            <div class="control-group">
+                <label for="fade-speed">Fade:</label>
+                <select id="fade-speed">
+                    <option value="500">Fast (0.5s)</option>
+                    <option value="1500" selected>Smooth (1.5s)</option>
+                    <option value="3000">Slow (3s)</option>
+                </select>
+            </div>
+            <div class="control-group spotify-status">
+                <button id="spotify-auth-btn" data-action="spotify-auth">
+                    <span id="spotify-status-icon">🎵</span>
+                    <span id="spotify-status-text">Connect Spotify</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="header-btns">
+            <button class="reset-highlight-header-btn" data-action="reset-highlight">🔄 Reset Highlight</button>
+            <button id="lock-toggle" data-action="toggle-lock">🔒 Unlock to Edit</button>
+        </div>
+    </header>
+
+    <aside id="subs-drawer" class="closed">
+        <div class="drawer-header">
+            <h3>All Players (# Order)</h3>
+            <button data-action="toggle-subs">✕</button>
+        </div>
+        <div id="subs-list"></div>
+    </aside>
+
+    <aside id="pitchers-drawer" class="closed">
+        <div class="drawer-header">
+            <h3>Pitchers (# Order)</h3>
+            <button data-action="toggle-pitchers">✕</button>
+        </div>
+        <div id="pitchers-list"></div>
+    </aside>
+
+    <!-- Team Management Modal -->
+    <div id="team-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Manage Teams</h2>
+                <button class="modal-close" data-action="close-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="add-team-form">
+                    <input type="text" id="new-team-name" placeholder="New Team Name" maxlength="50">
+                    <button data-action="add-team">➕ Add Team</button>
+                </div>
+                <div id="teams-list" class="teams-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spotify Track Search Modal -->
+    <div id="spotify-search-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Search Spotify</h2>
+                <button class="modal-close" data-action="close-spotify-search">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="spotify-search-form">
+                    <input type="text" id="spotify-search-input" placeholder="Search for songs, artists..." maxlength="100">
+                    <button data-action="search-spotify">🔍 Search</button>
+                </div>
+                <div id="spotify-results" class="spotify-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Innings Playlist Modal -->
+    <div id="innings-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Between Innings Playlist</h2>
+                <button class="modal-close" data-action="close-innings-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="innings-controls">
+                    <button data-action="play-innings-playlist" class="innings-play-btn">▶️ Play Playlist</button>
+                    <button data-action="stop-innings-playlist" class="innings-stop-btn">⏹️ Stop</button>
+                    <button data-action="add-innings-track" class="innings-add-btn">➕ Add Track</button>
+                </div>
+                <div id="innings-playlist" class="innings-playlist"></div>
+            </div>
+        </div>
+    </div>
+
+    <main>
+        <section class="game-view">
+            <div class="section-header">
+                <h2>Current Batting Order</h2>
+                <div class="section-header-btns">
+                    <button class="innings-btn" data-action="manage-innings">🎵 Innings Playlist</button>
+                    <button class="clear-lineup-btn" data-action="clear-lineup">Clear All</button>
+                </div>
+            </div>
+            <div id="lineup" class="sortable-list"></div>
+        </section>
+
+        <section class="roster-view">
+            <h2>Full Roster Management</h2>
+            
+            <div class="storage-indicator">
+                <div class="storage-header">
+                    <span class="storage-label">Storage Usage</span>
+                    <span class="storage-stats" id="storage-stats">Calculating...</span>
+                </div>
+                <div class="storage-bar-container">
+                    <div class="storage-bar" id="storage-bar"></div>
+                </div>
+            </div>
+            
+            <div class="add-player-form">
+                <input type="text" id="new-player-name" placeholder="Name" maxlength="50">
+                <input type="text" id="new-player-number" placeholder="#" maxlength="3">
+                <label class="pitcher-checkbox">
+                    <input type="checkbox" id="new-player-pitcher">
+                    <span>Pitcher</span>
+                </label>
+                <button data-action="add-player">Add New</button>
+            </div>
+            <div id="roster" class="roster-grid"></div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
