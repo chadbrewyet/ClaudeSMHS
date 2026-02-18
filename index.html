@@ -5,17 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pro Baseball Soundboard</title>
     <link rel="stylesheet" href="style.css">
-    <script>
-        window.onSpotifyWebPlaybackSDKReady = () => {
-            console.log('Spotify SDK Ready');
-            // Initialize your Spotify player here if needed
-        };
-    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <script src="https://sdk.scdn.co/spotify-player.js"></script>
-    <script src="config.js"></script>
-    <script src="spotify.js"></script>
-    <script src="script.js"></script>
+    <script src="config.js?v=2"></script>
+    <script src="spotify.js?v=2"></script>
+    <script src="script.js?v=2"></script>
 </head>
 <body class="locked">
 
@@ -163,5 +157,7 @@
             <div id="roster" class="roster-grid"></div>
         </section>
     </main>
+
+    <script src="script.js"></script>
 </body>
 </html>
