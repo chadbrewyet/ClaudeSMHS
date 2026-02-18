@@ -1,5 +1,5 @@
 // ============================================================================
-// SPOTIFY INTEGRATION
+// SPOTIFY INTEGRATION WITH PKCE
 // ============================================================================
 
 class SpotifyManager {
@@ -15,21 +15,46 @@ class SpotifyManager {
     }
 
     // ========================================================================
+    // PKCE HELPER FUNCTIONS
+    // ========================================================================
+
+    generateRandomString(length) {
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        const values = crypto.getRandomValues(new Uint8Array(length));
+        return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+    }
+
+    async sha256(plain) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(plain);
+        return window.crypto.subtle.digest('SHA-256', data);
+    }
+
+    base64encode(input) {
+        return btoa(String.fromCharCode(...new Uint8Array(input)))
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+    }
+
+    // ========================================================================
     // AUTHENTICATION
     // ========================================================================
 
     async initialize() {
-        // Check if we're returning from Spotify auth
-        const token = this.getTokenFromUrl();
-        if (token) {
-            this.accessToken = token;
-            sessionStorage.setItem('spotify_access_token', token);
+        // Check if we're returning from Spotify auth with code
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        
+        if (code) {
+            await this.handleCallback(code);
             window.history.replaceState({}, document.title, window.location.pathname);
-            await this.setupPlayer();
         } else {
             // Check for existing token
             const savedToken = sessionStorage.getItem('spotify_access_token');
-            if (savedToken) {
+            const tokenExpiry = sessionStorage.getItem('spotify_token_expiry');
+            
+            if (savedToken && tokenExpiry && Date.now() < parseInt(tokenExpiry)) {
                 this.accessToken = savedToken;
                 await this.setupPlayer();
             }
@@ -39,29 +64,79 @@ class SpotifyManager {
         this.loadInningsPlaylist();
     }
 
-    getTokenFromUrl() {
-        const hash = window.location.hash.substring(1);
-        const params = new URLSearchParams(hash);
-        return params.get('access_token');
-    }
+    async authorize() {
+        const codeVerifier = this.generateRandomString(64);
+        const hashed = await this.sha256(codeVerifier);
+        const codeChallenge = this.base64encode(hashed);
 
-    authorize() {
+        // Save code verifier for later
+        sessionStorage.setItem('code_verifier', codeVerifier);
+
         const authUrl = 'https://accounts.spotify.com/authorize';
         const params = new URLSearchParams({
             client_id: SPOTIFY_CONFIG.CLIENT_ID,
-            response_type: 'token',
+            response_type: 'code',
             redirect_uri: SPOTIFY_CONFIG.REDIRECT_URI,
             scope: SPOTIFY_CONFIG.SCOPES.join(' '),
-            show_dialog: 'false'
+            code_challenge_method: 'S256',
+            code_challenge: codeChallenge,
         });
 
         window.location.href = `${authUrl}?${params.toString()}`;
+    }
+
+    async handleCallback(code) {
+        const codeVerifier = sessionStorage.getItem('code_verifier');
+        
+        if (!codeVerifier) {
+            console.error('No code verifier found');
+            return;
+        }
+
+        const params = new URLSearchParams({
+            client_id: SPOTIFY_CONFIG.CLIENT_ID,
+            grant_type: 'authorization_code',
+            code: code,
+            redirect_uri: SPOTIFY_CONFIG.REDIRECT_URI,
+            code_verifier: codeVerifier,
+        });
+
+        try {
+            const response = await fetch('https://accounts.spotify.com/api/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: params.toString()
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.accessToken = data.access_token;
+                
+                // Store token with expiry
+                const expiryTime = Date.now() + (data.expires_in * 1000);
+                sessionStorage.setItem('spotify_access_token', this.accessToken);
+                sessionStorage.setItem('spotify_token_expiry', expiryTime.toString());
+                sessionStorage.removeItem('code_verifier');
+                
+                await this.setupPlayer();
+            } else {
+                console.error('Failed to get access token:', response.status);
+                alert('Failed to connect to Spotify. Please try again.');
+            }
+        } catch (error) {
+            console.error('Error getting access token:', error);
+            alert('Failed to connect to Spotify. Please try again.');
+        }
     }
 
     disconnect() {
         this.accessToken = null;
         this.isAuthenticated = false;
         sessionStorage.removeItem('spotify_access_token');
+        sessionStorage.removeItem('spotify_token_expiry');
+        sessionStorage.removeItem('code_verifier');
         
         if (this.player) {
             this.player.disconnect();
@@ -76,6 +151,8 @@ class SpotifyManager {
         const btn = document.getElementById('spotify-auth-btn');
         const statusText = document.getElementById('spotify-status-text');
         const statusIcon = document.getElementById('spotify-status-icon');
+
+        if (!btn) return;
 
         if (this.isAuthenticated) {
             btn.classList.add('connected');
@@ -99,16 +176,14 @@ class SpotifyManager {
     async setupPlayer() {
         if (!this.accessToken) return;
 
-        // Wait for Spotify SDK to load
         await this.waitForSpotifySDK();
 
         this.player = new Spotify.Player({
             name: 'Baseball Soundboard',
             getOAuthToken: cb => { cb(this.accessToken); },
-            volume: AppState.audio.volume
+            volume: AppState.audio.volume || 0.8
         });
 
-        // Error handling
         this.player.addListener('initialization_error', ({ message }) => {
             console.error('Failed to initialize:', message);
         });
@@ -127,7 +202,6 @@ class SpotifyManager {
             console.error('Playback error:', message);
         });
 
-        // Ready
         this.player.addListener('ready', ({ device_id }) => {
             console.log('Spotify player ready with device ID:', device_id);
             this.deviceId = device_id;
@@ -135,22 +209,17 @@ class SpotifyManager {
             this.updateAuthButton();
         });
 
-        // Not Ready
         this.player.addListener('not_ready', ({ device_id }) => {
             console.log('Device ID has gone offline:', device_id);
         });
 
-        // Player state changes
         this.player.addListener('player_state_changed', state => {
             if (!state) return;
-            
-            // Track ended
             if (state.paused && state.position === 0 && state.duration > 0) {
                 this.handleTrackEnd();
             }
         });
 
-        // Connect to the player
         const connected = await this.player.connect();
         
         if (!connected) {
@@ -172,11 +241,9 @@ class SpotifyManager {
     }
 
     handleTrackEnd() {
-        // If playing innings playlist, move to next track
         if (this.isInningsPlaying) {
             this.playNextInningsTrack();
         } else {
-            // Regular player track ended
             if (AppState.audio.currentBtn) {
                 UIManager.clearElementState(AppState.audio.currentBtn);
                 AppState.audio.currentBtn.removeAttribute('data-active');
@@ -227,7 +294,6 @@ class SpotifyManager {
 
     async pause() {
         if (!this.player) return;
-        
         try {
             await this.player.pause();
         } catch (error) {
@@ -237,7 +303,6 @@ class SpotifyManager {
 
     async setVolume(volume) {
         if (!this.player) return;
-        
         try {
             await this.player.setVolume(volume);
         } catch (error) {
@@ -334,7 +399,6 @@ class SpotifyManager {
 
     async selectTrack(track) {
         if (this.currentSearchPlayerId) {
-            // Assigning track to a player
             try {
                 const player = await Database.getPlayer(this.currentSearchPlayerId);
                 if (!player) return;
@@ -358,7 +422,6 @@ class SpotifyManager {
                 alert('Failed to assign track');
             }
         } else {
-            // Adding to innings playlist
             this.addToInningsPlaylist(track);
             this.hideSearchModal();
         }
@@ -463,7 +526,6 @@ class SpotifyManager {
     async playNextInningsTrack() {
         const nextIndex = this.inningsCurrentIndex + 1;
         if (nextIndex >= this.inningsPlaylist.length) {
-            // Loop back to start
             await this.playInningsTrack(0);
         } else {
             await this.playInningsTrack(nextIndex);
@@ -500,10 +562,6 @@ class SpotifyManager {
         }
     }
 
-    // ========================================================================
-    // UTILITIES
-    // ========================================================================
-
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -511,5 +569,4 @@ class SpotifyManager {
     }
 }
 
-// Create global instance
 const spotifyManager = new SpotifyManager();
