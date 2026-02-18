@@ -1195,6 +1195,9 @@ async function initializeApp() {
         await StateManager.loadState();
         
         EventHandlers.initialize();
+
+        // Initialize Spotify AFTER everything else
+        await spotifyManager.initialize();
         
         console.log('Baseball Soundboard initialized successfully');
         
