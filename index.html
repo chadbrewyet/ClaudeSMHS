@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pro Baseball Soundboard</title>
     <link rel="stylesheet" href="style.css">
+    <script>
+        window.onSpotifyWebPlaybackSDKReady = () => {
+            console.log('Spotify SDK Ready');
+            // Initialize your Spotify player here if needed
+        };
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <script src="config.js"></script>
     <script src="spotify.js"></script>
