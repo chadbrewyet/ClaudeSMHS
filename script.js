@@ -1179,6 +1179,55 @@ class EventHandlers {
                     await PlayerActions.uploadAudio(playerId, target.files[0]);
                 }
                 break;
+                
+            case 'spotify-auth':
+                // Handled by spotify.js
+                break;
+                
+            case 'search-spotify':
+                await spotifyManager.performSearch();
+                break;
+                
+            case 'close-spotify-search':
+                spotifyManager.hideSearchModal();
+                break;
+                
+            case 'spotify-search-player':
+                spotifyManager.showSearchModal(playerId);
+                break;
+                
+            case 'select-source-local':
+                await PlayerActions.updatePlayer(playerId, { audioSource: 'local' });
+                break;
+                
+            case 'select-source-spotify':
+                await PlayerActions.updatePlayer(playerId, { audioSource: 'spotify' });
+                break;
+                
+            case 'manage-innings':
+                spotifyManager.showInningsModal();
+                break;
+                
+            case 'close-innings-modal':
+                spotifyManager.hideInningsModal();
+                break;
+                
+            case 'play-innings-playlist':
+                await spotifyManager.playInningsPlaylist();
+                break;
+                
+            case 'stop-innings-playlist':
+                spotifyManager.stopInningsPlaylist();
+                break;
+                
+            case 'add-innings-track':
+                spotifyManager.showSearchModal(null);
+                break;
+                
+            case 'remove-innings-track':
+                const trackId = parseFloat(target.dataset.trackId);
+                spotifyManager.removeFromInningsPlaylist(trackId);
+                break;
         }
     }
 }
